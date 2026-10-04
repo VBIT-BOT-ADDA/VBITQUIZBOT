@@ -1,6 +1,8 @@
 import logging
 import time
 import asyncio
+import io
+import urllib.request
 from telegram import (
     Update, 
     InlineKeyboardButton, 
@@ -28,6 +30,19 @@ logging.basicConfig(
 TITLE, DESCRIPTION, QUESTIONS, TIMER, SHUFFLE = range(5)
 active_sessions = {}
 
+def get_photo_bytes(url):
+    """Image URL ko download karke Telegram photo compatible byte stream me convert karta hai"""
+    try:
+        req = urllib.request.Request(
+            url, 
+            headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+        )
+        with urllib.request.urlopen(req, timeout=10) as response:
+            return io.BytesIO(response.read())
+    except Exception as e:
+        logging.error(f"Error downloading image: {e}")
+        return None
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     chat = update.effective_chat
@@ -51,24 +66,28 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    # Safe handling if image URL fails to load
+    photo_stream = get_photo_bytes(config.WELCOME_IMAGE_URL)
+
     try:
-        if update.message:
-            await update.message.reply_photo(
-                photo=config.WELCOME_IMAGE_URL,
-                caption=caption_text,
-                parse_mode="HTML",
-                reply_markup=reply_markup
-            )
-        elif update.callback_query:
-            await update.callback_query.message.reply_photo(
-                photo=config.WELCOME_IMAGE_URL,
-                caption=caption_text,
-                parse_mode="HTML",
-                reply_markup=reply_markup
-            )
+        if photo_stream:
+            if update.message:
+                await update.message.reply_photo(
+                    photo=photo_stream,
+                    caption=caption_text,
+                    parse_mode="HTML",
+                    reply_markup=reply_markup
+                )
+            elif update.callback_query:
+                await update.callback_query.message.reply_photo(
+                    photo=photo_stream,
+                    caption=caption_text,
+                    parse_mode="HTML",
+                    reply_markup=reply_markup
+                )
+        else:
+            raise Exception("Photo stream unavailable")
     except Exception as e:
-        logging.error(f"Failed to send welcome image: {e}")
+        logging.error(f"Fallback to text welcome: {e}")
         if update.message:
             await update.message.reply_text(
                 text=caption_text,
@@ -175,14 +194,27 @@ async def process_title(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Good. Now send me a description (or send /skip).")
     return DESCRIPTION
 
+async def prompt_create_quiz_button(update: Update):
+    keyboard = [[InlineKeyboardButton("Create a Quiz", callback_data="start_questions_step")]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text(
+        "Description saved! Click below to start adding polls.", 
+        reply_markup=reply_markup
+    )
+
 async def process_description(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data['current_quiz']['description'] = update.message.text
-    await update.message.reply_text("Now send me Quiz Polls. When finished, send /done.")
+    await prompt_create_quiz_button(update)
     return QUESTIONS
 
 async def skip_description(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Now send me Quiz Polls. When finished, send /done.")
+    await prompt_create_quiz_button(update)
     return QUESTIONS
+
+async def start_questions_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    await query.message.reply_text("Now send me Quiz Polls. When finished, send /done.")
 
 async def process_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message.poll:
@@ -367,14 +399,14 @@ def main():
                 MessageHandler(filters.TEXT & ~filters.COMMAND, process_description)
             ],
             QUESTIONS: [
+                CallbackQueryHandler(start_questions_callback, pattern="^start_questions_step$"),
                 CommandHandler('done', finish_questions),
                 MessageHandler(filters.POLL | filters.TEXT, process_question)
             ],
             TIMER: [CallbackQueryHandler(process_timer, pattern="^time_")],
             SHUFFLE: [CallbackQueryHandler(process_shuffle, pattern="^shuf_")]
         },
-        fallbacks=[CommandHandler('cancel', cancel)],
-        per_message=False
+        fallbacks=[CommandHandler('cancel', cancel)]
     )
 
     app.add_handler(CommandHandler("start", start))
