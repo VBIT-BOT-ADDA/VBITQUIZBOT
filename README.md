@@ -1,6 +1,3 @@
-<p align="center">
-  <img src="https://files.catbox.moe/zzpmhu.jpg" alt="VBIT Quiz Bot Banner" width="100%" />
-</p>
 
 <h1 align="center">🎲 VBIT QUIZ BOT</h1>
 
