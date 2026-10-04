@@ -1,0 +1,42 @@
+{
+  "name": "Telegram Quiz Bot",
+  "description": "Quiz creation and broadcast bot powered by MongoDB and python-telegram-bot",
+  "repository": "https://github.com/VBIT-BOT-ADDA/VBITQUIZBOT",
+  "logo": "https://images.unsplash.com/photo-1606326608606-aa0b62935f2b?w=800",
+  "keywords": ["telegram", "bot", "quiz", "mongodb", "python"],
+  "env": {
+    "BOT_TOKEN": {
+      "description": "Your Telegram Bot Token from @BotFather",
+      "required": true
+    },
+    "MONGO_URI": {
+      "description": "Your MongoDB Connection String (e.g. mongodb+srv://...)",
+      "required": true
+    },
+    "OWNER_ID": {
+      "description": "Your Telegram Numeric User ID for Admin/Broadcast access",
+      "required": true
+    },
+    "WELCOME_IMAGE_URL": {
+      "description": "Direct image URL for start command",
+      "value": "https://images.unsplash.com/photo-1606326608606-aa0b62935f2b?w=800",
+      "required": false
+    },
+    "OWNER_USERNAME": {
+      "description": "Your Telegram Username without @",
+      "value": "Telegram",
+      "required": false
+    },
+    "UPDATE_CHANNEL": {
+      "description": "Your Telegram Channel Username without @",
+      "value": "Telegram",
+      "required": false
+    }
+  },
+  "formation": {
+    "worker": {
+      "quantity": 1,
+      "size": "eco"
+    }
+  }
+}
