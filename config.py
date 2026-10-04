@@ -21,27 +21,30 @@ except (TypeError, ValueError):
 # 🔐 FORCE SUBSCRIPTION / CHANNEL VERIFICATION
 # ============================================================
 
-# Public channel:
+# Public channel example:
 # FORCE_SUB_CHANNEL=@llBADAL_UPDATEll
 #
-# Private channel:
-# FORCE_SUB_CHANNEL=-1004326227389
+# Private channel example:
+# FORCE_SUB_CHANNEL=-1001234567890
 
-FORCE_SUB_CHANNEL = os.getenv("FORCE_SUB_CHANNEL", "").strip()
+FORCE_SUB_CHANNEL = os.getenv(
+    "FORCE_SUB_CHANNEL",
+    "",
+).strip()
 
+
+# Channel join/invite link
 # Example:
-# https://t.me/llBADAL_UPDATEll
-# or private invite link:
 # https://t.me/llBADAL_UPDATEll
 
 FORCE_SUB_CHANNEL_LINK = os.getenv(
-    "https://t.me/llBADAL_UPDATEll",
+    "FORCE_SUB_CHANNEL_LINK",
     "",
 ).strip()
 
 
 # ============================================================
-# ✅ REQUIRED ENVIRONMENT VARIABLES
+# ✅ ENVIRONMENT VALIDATION
 # ============================================================
 
 if not BOT_TOKEN:
