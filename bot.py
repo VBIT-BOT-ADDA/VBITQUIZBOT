@@ -4,6 +4,7 @@ import logging
 import random
 import time
 import urllib.request
+from urllib.parse import quote
 
 from telegram import (
     Update,
@@ -45,17 +46,39 @@ active_sessions = {}
 
 
 def get_photo_bytes(url):
-    """Download welcome image and return a Telegram-compatible byte stream."""
+    """Download the configured welcome image and reject empty responses."""
+    if not url:
+        return None
+
     try:
         req = urllib.request.Request(
             url,
-            headers={"User-Agent": "Mozilla/5.0"},
+            headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+            },
         )
-        with urllib.request.urlopen(req, timeout=10) as response:
-            return io.BytesIO(response.read())
+        with urllib.request.urlopen(req, timeout=15) as response:
+            data = response.read()
+
+        if not data:
+            logger.warning("Welcome image URL returned empty data.")
+            return None
+
+        return io.BytesIO(data)
     except Exception as e:
-        logger.error("Error downloading welcome image: %s", e)
+        logger.warning("Welcome image download failed: %s", e)
         return None
+
+
+def quiz_share_url(bot_username, quiz_id, quiz_title):
+    """Build Telegram's native Share dialog URL for a saved quiz."""
+    start_url = f"https://t.me/{bot_username}?start=quiz_{quiz_id}"
+    share_text = f"🎯 {quiz_title}\n\nʙʏ ǫᴜɪᴢ ʙᴏᴛ — ᴛᴀᴘ ʙᴇʟᴏᴡ ᴛᴏ ᴘʟᴀʏ!"
+    return (
+        "https://t.me/share/url?"
+        f"url={quote(start_url, safe='')}"
+        f"&text={quote(share_text, safe='')}"
+    )
 
 
 def quiz_creation_keyboard():
@@ -69,13 +92,13 @@ def quiz_creation_keyboard():
         [
             [
                 KeyboardButton(
-                    "📝 Create Quiz",
+                    "📝 ᴄʀᴇᴀᴛᴇ ǫᴜɪᴢ",
                     request_poll=KeyboardButtonPollType(type="quiz"),
                 )
             ],
             [
-                KeyboardButton("✅ Done"),
-                KeyboardButton("❌ Cancel"),
+                KeyboardButton("✅ ᴅᴏɴᴇ"),
+                KeyboardButton("❌ ᴄᴀɴᴄᴇʟ"),
             ],
         ],
         resize_keyboard=True,
@@ -99,34 +122,38 @@ async def send_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if is_private:
         caption_text = (
-            f"<b>This bot will help you create a quiz with a series "
-            f"of multiple choice questions.</b>\n\n"
-            f"Welcome, {user.first_name}! "
-            f"Tap <b>Create Quiz</b> below to open Telegram's native Quiz Poll creator."
+            "<b>╭━━━〔 🎯 ǫᴜɪᴢ ᴢᴏɴᴇ 〕━━━╮</b>\n"
+            "<b>┃</b> ᴡᴇʟᴄᴏᴍᴇ, " + f"<b>{user.first_name}</b>" + "! ✨\n"
+            "<b>┃</b> ᴛᴜʀɴ ʏᴏᴜʀ ɪᴅᴇᴀs ɪɴᴛᴏ ᴀ ʟɪᴠᴇ ǫᴜɪᴢ.\n"
+            "<b>┃</b> ᴄʀᴇᴀᴛᴇ ᴘᴏʟʟs ᴅɪʀᴇᴄᴛʟʏ ᴜsɪɴɢ ᴛᴇʟᴇɢʀᴀᴍ'ꜱ ɴᴀᴛɪᴠᴇ ǫᴜɪᴢ ᴍᴏᴅᴇ.\n"
+            "<b>┃</b> ᴄʜᴏᴏsᴇ ᴛɪᴍᴇʀ • sʜᴜꜰꜰʟᴇ • sᴛᴀʀᴛ • sʜᴀʀᴇ.\n"
+            "<b>┃</b> ᴍᴀᴋᴇ ɪᴛ. sʜᴀʀᴇ ɪᴛ. ᴘʟᴀʏ ɪᴛ. 🏆\n"
+            "<b>╰━━━━━━━━━━━━━━━━━━━━╯</b>\n\n"
+            "<b>⚡ ᴛᴀᴘ ʙᴇʟᴏᴡ ᴛᴏ ᴄʀᴇᴀᴛᴇ ʏᴏᴜʀ ǫᴜɪᴢ.</b>"
         )
     else:
         caption_text = (
-            "<b>🎯 Quiz Bot</b>\n\n"
-            "Quiz creation is done in the bot's private chat.\n"
-            "Once a quiz is created, use its group start link to launch it here.\n\n"
-            "📚 The group will then show the quiz details and a "
-            "<b>YES, I AM READY FOR QUIZ</b> button."
+            "<b>╭━━━〔 🎯 ǫᴜɪᴢ ᴀʀᴇɴᴀ 〕━━━╮</b>\n"
+            "<b>┃</b> ᴀ ɴᴇᴡ ǫᴜɪᴢ ʜᴀs ʟᴀɴᴅᴇᴅ ʜᴇʀᴇ. 🔥\n"
+            "<b>┃</b> ᴄʀᴇᴀᴛᴇ ɪᴛ ɪɴ ᴘʀɪᴠᴀᴛᴇ ᴄʜᴀᴛ, ᴛʜᴇɴ sʜᴀʀᴇ ɪᴛ ʜᴇʀᴇ.\n"
+            "<b>┃</b> ǫᴜᴇsᴛɪᴏɴs ᴀᴘᴘᴇᴀʀ ᴏɴᴇ-ʙʏ-ᴏɴᴇ ᴀғᴛᴇʀ ʏᴏᴜ ᴀʀᴇ ʀᴇᴀᴅʏ.\n"
+            "<b>╰━━━━━━━━━━━━━━━━━━━━╯</b>"
         )
 
     keyboard = [
         [
             InlineKeyboardButton(
-                "Owner",
+                "ᴏᴡɴᴇʀ",
                 url=f"https://t.me/{config.OWNER_USERNAME.lstrip('@')}",
             ),
             InlineKeyboardButton(
-                "Update Channel",
+                "ᴜᴘᴅᴀᴛᴇs",
                 url=f"https://t.me/{config.UPDATE_CHANNEL.lstrip('@')}",
             ),
         ],
         [
             InlineKeyboardButton(
-                "Help & Commands",
+                "ʜᴇʟᴘ & ᴄᴏᴍᴍᴀɴᴅs",
                 callback_data="help_commands",
             )
         ],
@@ -151,7 +178,25 @@ async def send_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             image_sent = True
         except Exception as e:
-            logger.warning("Welcome image could not be sent: %s", e)
+            logger.warning("Direct welcome image failed: %s", e)
+
+            # Second attempt: download the image ourselves and verify that
+            # Telegram receives non-empty bytes.
+            photo_stream = get_photo_bytes(config.WELCOME_IMAGE_URL)
+            if photo_stream is not None:
+                try:
+                    await target_message.reply_photo(
+                        photo=photo_stream,
+                        caption=caption_text,
+                        parse_mode="HTML",
+                        reply_markup=reply_markup,
+                    )
+                    image_sent = True
+                except Exception as fallback_error:
+                    logger.warning(
+                        "Downloaded welcome image also failed: %s",
+                        fallback_error,
+                    )
 
     if not image_sent:
         await target_message.reply_text(
@@ -164,19 +209,17 @@ async def send_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Never attach a request_poll keyboard to a group/supergroup.
     if is_private:
         await target_message.reply_text(
-            "👇 <b>Create your quiz from Telegram itself:</b>\n"
-            "Press <b>📝 Create Quiz</b> and the native <b>New Poll → Quiz</b> "
-            "screen will open.\n\n"
-            "After every question, press the same button for the next quiz poll. "
-            "When finished, press <b>✅ Done</b>.",
+            "✨ <b>ᴄʀᴇᴀᴛᴇ ʏᴏᴜʀ ǫᴜɪᴢ ʀɪɢʜᴛ ɪɴ ᴛᴇʟᴇɢʀᴀᴍ</b>\n\n"
+            "📝 ᴛᴀᴘ <b>ᴄʀᴇᴀᴛᴇ ǫᴜɪᴢ</b> → ɴᴀᴛɪᴠᴇ ǫᴜɪᴢ ᴘᴏʟʟ.\n"
+            "➕ ᴀᴅᴅ ᴀs ᴍᴀɴʏ ǫᴜᴇsᴛɪᴏɴs ᴀs ʏᴏᴜ ᴡᴀɴᴛ.\n"
+            "✅ ᴡʜᴇɴ ᴅᴏɴᴇ, ᴛᴀᴘ <b>ᴅᴏɴᴇ</b>.",
             parse_mode="HTML",
             reply_markup=quiz_creation_keyboard(),
         )
     else:
         await target_message.reply_text(
-            "📌 <b>Quiz Control</b>\n\n"
-            "Create the quiz in private chat, then use the generated "
-            "<b>Start quiz in group</b> link here.",
+            "📌 <b>ǫᴜɪᴢ ᴄᴏɴᴛʀᴏʟ</b>\n\n"
+            "ᴄʀᴇᴀᴛᴇ ᴛʜᴇ ǫᴜɪᴢ ɪɴ ᴘʀɪᴠᴀᴛᴇ ᴄʜᴀᴛ, ᴛʜᴇɴ sʜᴀʀᴇ ᴛʜᴇ ǫᴜɪᴢ ᴛᴏ ᴛʜɪs ɢʀᴏᴜᴘ.",
             parse_mode="HTML",
         )
 
@@ -294,7 +337,7 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
         keyboard = [
             [
                 InlineKeyboardButton(
-                    "Back to Main Menu",
+                    "ʙᴀᴄᴋ ᴛᴏ ᴍᴀɪɴ ᴍᴇɴᴜ",
                     callback_data="main_menu",
                 )
             ]
@@ -340,7 +383,7 @@ def initialize_quiz(user):
         "description": "No description provided.",
         "questions": [],
         "timer": 15,
-        "shuffle": "No Shuffle",
+        "shuffle": "ɴᴏ sʜᴜꜰꜰʟᴇ",
     }
 
 
@@ -481,13 +524,13 @@ async def finish_questions(
 
     keyboard = [
         [
-            InlineKeyboardButton("10 sec", callback_data="time_10"),
-            InlineKeyboardButton("15 sec", callback_data="time_15"),
-            InlineKeyboardButton("30 sec", callback_data="time_30"),
+            InlineKeyboardButton("𝟷𝟶 sᴇᴄ", callback_data="time_10"),
+            InlineKeyboardButton("𝟷𝟻 sᴇᴄ", callback_data="time_15"),
+            InlineKeyboardButton("𝟹𝟶 sᴇᴄ", callback_data="time_30"),
         ],
         [
-            InlineKeyboardButton("45 sec", callback_data="time_45"),
-            InlineKeyboardButton("1 min", callback_data="time_60"),
+            InlineKeyboardButton("𝟺𝟻 sᴇᴄ", callback_data="time_45"),
+            InlineKeyboardButton("𝟷 ᴍɪɴ", callback_data="time_60"),
         ],
     ]
 
@@ -525,11 +568,11 @@ async def process_timer(
     keyboard = [
         [
             InlineKeyboardButton(
-                "Shuffle All",
+                "sʜᴜꜰꜰʟᴇ ᴀʟʟ",
                 callback_data="shuf_all",
             ),
             InlineKeyboardButton(
-                "No Shuffle",
+                "ɴᴏ sʜᴜꜰꜰʟᴇ",
                 callback_data="shuf_none",
             ),
         ]
@@ -560,26 +603,42 @@ async def process_shuffle(
     user_id = update.effective_user.id
 
     current_quiz["shuffle"] = (
-        "Shuffle All"
+        "sʜᴜꜰꜰʟᴇ ᴀʟʟ"
         if query.data == "shuf_all"
-        else "No Shuffle"
+        else "ɴᴏ sʜᴜꜰꜰʟᴇ"
     )
+
+    creator = update.effective_user
+    current_quiz["creator_username"] = creator.username or ""
 
     quiz_id = database.save_quiz(user_id, current_quiz)
 
     quiz_info = current_quiz
+    creator_display = (
+        f"@{quiz_info['creator_username']}"
+        if quiz_info.get("creator_username")
+        else f"{creator.first_name}"
+    )
+
     bot_username = context.bot.username
 
     if not bot_username:
         me = await context.bot.get_me()
         bot_username = me.username
 
+    share_url = quiz_share_url(
+        bot_username,
+        quiz_id,
+        quiz_info["title"],
+    )
+
     summary_msg = (
         "👍 <b>Quiz Created Successfully!</b>\n\n"
         f"<b>{quiz_info['title']}</b>\n"
         f"<i>{len(quiz_info['questions'])} question(s) · "
         f"{quiz_info['timer']} sec/question</i>\n"
-        f"🔀 <b>{quiz_info['shuffle']}</b>\n\n"
+        f"🔀 <b>{quiz_info['shuffle']}</b>\n"
+        f"👤 <b>Created by:</b> {creator_display}\n\n"
         f"<b>Private Start Link:</b>\n"
         f"<code>https://t.me/{bot_username}?start=quiz_{quiz_id}</code>\n\n"
         f"<b>Group Start:</b> Use the <b>Start quiz in group</b> button below."
@@ -588,20 +647,20 @@ async def process_shuffle(
     keyboard = [
         [
             InlineKeyboardButton(
-                "▶️ Start this quiz",
+                "▶️ sᴛᴀʀᴛ ǫᴜɪᴢ",
                 callback_data=f"startquiz_{quiz_id}",
             )
         ],
         [
             InlineKeyboardButton(
-                "👥 Start quiz in group",
+                "👥 sᴛᴀʀᴛ ɪɴ ɢʀᴏᴜᴘ",
                 url=f"https://t.me/{bot_username}?startgroup=quiz_{quiz_id}",
             )
         ],
         [
             InlineKeyboardButton(
-                "🏠 Main Menu",
-                callback_data="main_menu",
+                "📤 sʜᴀʀᴇ ǫᴜɪᴢ",
+                url=share_url,
             )
         ],
     ]
@@ -639,7 +698,7 @@ async def send_quiz_ready_message(
             "<b>YES, I AM READY FOR QUIZ</b>.\n\n"
             "🏆 Answer each question before the timer ends."
         )
-        button_text = "✅ YES, I AM READY FOR QUIZ"
+        button_text = "✅ ʏᴇs, ɪ ᴀᴍ ʀᴇᴀᴅʏ ғᴏʀ ǫᴜɪᴢ"
     else:
         ready_msg = (
             f"🎲 <b>Get ready for '{quiz['title']}'</b>\n\n"
@@ -649,7 +708,7 @@ async def send_quiz_ready_message(
             f"🔀 {quiz.get('shuffle', 'No Shuffle')}\n\n"
             "Press <b>I'm ready</b> when prepared."
         )
-        button_text = "✅ I'm ready"
+        button_text = "✅ ɪ'ᴍ ʀᴇᴀᴅʏ"
 
     keyboard = [
         [
@@ -768,7 +827,7 @@ async def send_question(
     if "questions" not in session:
         session["questions"] = list(quiz.get("questions", []))
 
-        if quiz.get("shuffle") == "Shuffle All":
+        if quiz.get("shuffle") in ("Shuffle All", "sʜᴜꜰꜰʟᴇ ᴀʟʟ"):
             random.shuffle(session["questions"])
 
     questions = session["questions"]
@@ -933,9 +992,29 @@ async def finish_quiz_results(
     wrong = session["wrong"]
     missed = max(0, total_q - (correct + wrong))
 
+    creator_username = quiz.get("creator_username") or ""
+    creator_line = (
+        f"👤 <b>Created by:</b> @{creator_username}\n\n"
+        if creator_username
+        else ""
+    )
+
+    bot_username = context.bot.username
+    if not bot_username:
+        me = await context.bot.get_me()
+        bot_username = me.username
+
+    share_url = quiz_share_url(
+        bot_username,
+        session["quiz_id"],
+        quiz["title"],
+    )
+
     results_text = (
-        f"🏁 <b>The quiz '{quiz['title']}' has finished!</b>\n\n"
-        f"<i>You answered {total_q} question(s):</i>\n\n"
+        f"🏁 <b>Qᴜɪᴢ Fɪɴɪsʜᴇᴅ</b>\n\n"
+        f"🎯 <b>{quiz['title']}</b>\n"
+        f"{creator_line}"
+        f"<i>ʏᴏᴜ ᴀɴsᴡᴇʀᴇᴅ {total_q} ǫᴜᴇsᴛɪᴏɴ(s):</i>\n\n"
         f"✅ <b>Correct</b> – {correct}\n"
         f"❌ <b>Wrong</b> – {wrong}\n"
         f"⏳ <b>Missed</b> – {missed}\n"
@@ -946,8 +1025,8 @@ async def finish_quiz_results(
     keyboard = [
         [
             InlineKeyboardButton(
-                "🏠 Main Menu",
-                callback_data="main_menu",
+                "📤 sʜᴀʀᴇ ǫᴜɪᴢ",
+                url=share_url,
             )
         ]
     ]
@@ -1027,11 +1106,11 @@ def main():
                 CommandHandler("cancel", cancel),
 
                 MessageHandler(
-                    filters.Regex(r"^✅ Done$"),
+                    filters.Regex(r"^✅ ᴅᴏɴᴇ$"),
                     finish_questions,
                 ),
                 MessageHandler(
-                    filters.Regex(r"^❌ Cancel$"),
+                    filters.Regex(r"^❌ ᴄᴀɴᴄᴇʟ$"),
                     cancel,
                 ),
 
