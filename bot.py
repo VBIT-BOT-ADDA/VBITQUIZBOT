@@ -140,12 +140,12 @@ async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif query.data == "main_menu":
         await start(update, context)
 
-    elif query.data == "create_quiz":
-        await query.message.reply_text("Let's create a new quiz. Send me the title of your quiz.")
-        return TITLE
-
 async def create_quiz_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Let's create a new quiz. Send me the title of your quiz.")
+    if update.callback_query:
+        await update.callback_query.answer()
+        await update.callback_query.message.reply_text("Let's create a new quiz. Send me the title of your quiz.")
+    elif update.message:
+        await update.message.reply_text("Let's create a new quiz. Send me the title of your quiz.")
     return TITLE
 
 async def process_title(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -329,12 +329,21 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 def main():
-    app = Application.builder().token(config.BOT_TOKEN).build()
+    # Adding read_timeout and connect_timeout to prevent TimedOut errors on Heroku
+    app = (
+        Application.builder()
+        .token(config.BOT_TOKEN)
+        .read_timeout(30)
+        .write_timeout(30)
+        .connect_timeout(30)
+        .pool_timeout(30)
+        .build()
+    )
 
     conv_handler = ConversationHandler(
         entry_points=[
             CommandHandler('newquiz', create_quiz_start),
-            CallbackQueryHandler(button_click, pattern="^create_quiz$")
+            CallbackQueryHandler(create_quiz_start, pattern="^create_quiz$")
         ],
         states={
             TITLE: [MessageHandler(filters.TEXT & ~filters.COMMAND, process_title)],
@@ -362,8 +371,8 @@ def main():
     app.add_handler(CallbackQueryHandler(button_click))
 
     print("Quiz Bot with MongoDB, Broadcast, and Stats is running...")
-    app.run_polling()
+    app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
     main()
-  
+    
