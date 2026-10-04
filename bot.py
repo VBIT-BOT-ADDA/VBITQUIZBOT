@@ -51,20 +51,36 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    if update.message:
-        await update.message.reply_photo(
-            photo=config.WELCOME_IMAGE_URL,
-            caption=caption_text,
-            parse_mode="HTML",
-            reply_markup=reply_markup
-        )
-    elif update.callback_query:
-        await update.callback_query.message.reply_photo(
-            photo=config.WELCOME_IMAGE_URL,
-            caption=caption_text,
-            parse_mode="HTML",
-            reply_markup=reply_markup
-        )
+    # Safe handling if image URL fails to load
+    try:
+        if update.message:
+            await update.message.reply_photo(
+                photo=config.WELCOME_IMAGE_URL,
+                caption=caption_text,
+                parse_mode="HTML",
+                reply_markup=reply_markup
+            )
+        elif update.callback_query:
+            await update.callback_query.message.reply_photo(
+                photo=config.WELCOME_IMAGE_URL,
+                caption=caption_text,
+                parse_mode="HTML",
+                reply_markup=reply_markup
+            )
+    except Exception as e:
+        logging.error(f"Failed to send welcome image: {e}")
+        if update.message:
+            await update.message.reply_text(
+                text=caption_text,
+                parse_mode="HTML",
+                reply_markup=reply_markup
+            )
+        elif update.callback_query:
+            await update.callback_query.message.reply_text(
+                text=caption_text,
+                parse_mode="HTML",
+                reply_markup=reply_markup
+            )
 
 async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != config.OWNER_ID:
@@ -329,7 +345,6 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 def main():
-    # Adding read_timeout and connect_timeout to prevent TimedOut errors on Heroku
     app = (
         Application.builder()
         .token(config.BOT_TOKEN)
@@ -358,7 +373,8 @@ def main():
             TIMER: [CallbackQueryHandler(process_timer, pattern="^time_")],
             SHUFFLE: [CallbackQueryHandler(process_shuffle, pattern="^shuf_")]
         },
-        fallbacks=[CommandHandler('cancel', cancel)]
+        fallbacks=[CommandHandler('cancel', cancel)],
+        per_message=False
     )
 
     app.add_handler(CommandHandler("start", start))
@@ -375,4 +391,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    
