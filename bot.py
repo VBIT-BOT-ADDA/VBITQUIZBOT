@@ -1,6 +1,7 @@
 import asyncio
 import io
 import logging
+import random
 import time
 import urllib.request
 
@@ -94,12 +95,23 @@ async def send_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if chat.type in ("group", "supergroup"):
         database.add_chat(chat.id, chat.title, chat.type)
 
-    caption_text = (
-        f"<b>This bot will help you create a quiz with a series "
-        f"of multiple choice questions.</b>\n\n"
-        f"Welcome, {user.first_name}! "
-        f"Tap <b>Create Quiz</b> below to open Telegram's native Quiz Poll creator."
-    )
+    is_private = chat.type == "private"
+
+    if is_private:
+        caption_text = (
+            f"<b>This bot will help you create a quiz with a series "
+            f"of multiple choice questions.</b>\n\n"
+            f"Welcome, {user.first_name}! "
+            f"Tap <b>Create Quiz</b> below to open Telegram's native Quiz Poll creator."
+        )
+    else:
+        caption_text = (
+            "<b>🎯 Quiz Bot</b>\n\n"
+            "Quiz creation is done in the bot's private chat.\n"
+            "Once a quiz is created, use its group start link to launch it here.\n\n"
+            "📚 The group will then show the quiz details and a "
+            "<b>YES, I AM READY FOR QUIZ</b> button."
+        )
 
     keyboard = [
         [
@@ -121,49 +133,57 @@ async def send_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    photo_stream = get_photo_bytes(config.WELCOME_IMAGE_URL)
-
     target_message = update.message
     if update.callback_query:
         target_message = update.callback_query.message
 
-    try:
-        if photo_stream:
+    # Send the configured welcome image directly to Telegram.
+    # This avoids the "File must be non-empty" error caused by an
+    # empty/failed urllib download stream.
+    image_sent = False
+    if config.WELCOME_IMAGE_URL:
+        try:
             await target_message.reply_photo(
-                photo=photo_stream,
+                photo=config.WELCOME_IMAGE_URL,
                 caption=caption_text,
                 parse_mode="HTML",
                 reply_markup=reply_markup,
             )
-        else:
-            await target_message.reply_text(
-                caption_text,
-                parse_mode="HTML",
-                reply_markup=reply_markup,
-            )
-    except Exception as e:
-        logger.error("Failed to send welcome message: %s", e)
+            image_sent = True
+        except Exception as e:
+            logger.warning("Welcome image could not be sent: %s", e)
+
+    if not image_sent:
         await target_message.reply_text(
             caption_text,
             parse_mode="HTML",
             reply_markup=reply_markup,
         )
 
-    # Reply keyboard is separate because Telegram's native poll
-    # request is available through KeyboardButton, not InlineKeyboardButton.
-    await target_message.reply_text(
-        "👇 <b>Create your quiz from Telegram itself:</b>\n"
-        "Press <b>📝 Create Quiz</b> and the native <b>New Poll → Quiz</b> "
-        "screen will open.\n\n"
-        "After every question, press the same button for the next quiz poll. "
-        "When finished, press <b>✅ Done</b>.",
-        parse_mode="HTML",
-        reply_markup=quiz_creation_keyboard(),
-    )
+    # Telegram only allows request_poll buttons in private chats.
+    # Never attach a request_poll keyboard to a group/supergroup.
+    if is_private:
+        await target_message.reply_text(
+            "👇 <b>Create your quiz from Telegram itself:</b>\n"
+            "Press <b>📝 Create Quiz</b> and the native <b>New Poll → Quiz</b> "
+            "screen will open.\n\n"
+            "After every question, press the same button for the next quiz poll. "
+            "When finished, press <b>✅ Done</b>.",
+            parse_mode="HTML",
+            reply_markup=quiz_creation_keyboard(),
+        )
+    else:
+        await target_message.reply_text(
+            "📌 <b>Quiz Control</b>\n\n"
+            "Create the quiz in private chat, then use the generated "
+            "<b>Start quiz in group</b> link here.",
+            parse_mode="HTML",
+        )
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Support: /start quiz_<id>
+    # Support both private and group deep links:
+    # /start quiz_<id>
     if context.args:
         payload = context.args[0]
         if payload.startswith("quiz_"):
@@ -171,11 +191,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             quiz = database.get_quiz_by_id(quiz_id)
 
             if not quiz:
-                await update.message.reply_text("❌ Quiz not found or expired.")
+                await update.effective_message.reply_text(
+                    "❌ Quiz not found or expired."
+                )
                 return
 
             await send_quiz_ready_message(
-                update.message,
+                update.effective_message,
                 quiz,
                 quiz_id,
             )
@@ -337,7 +359,9 @@ async def process_question(
 
     if update.effective_chat.type != "private":
         await update.message.reply_text(
-            "⚠️ Please create quiz questions in the bot's private chat."
+            "⚠️ <b>Quiz creation is available in private chat only.</b>\n\n"
+            "Open the bot in private chat and press 📝 Create Quiz.",
+            parse_mode="HTML",
         )
         return QUESTIONS
 
@@ -556,8 +580,9 @@ async def process_shuffle(
         f"<i>{len(quiz_info['questions'])} question(s) · "
         f"{quiz_info['timer']} sec/question</i>\n"
         f"🔀 <b>{quiz_info['shuffle']}</b>\n\n"
-        f"<b>Start Link:</b>\n"
-        f"<code>https://t.me/{bot_username}?start=quiz_{quiz_id}</code>"
+        f"<b>Private Start Link:</b>\n"
+        f"<code>https://t.me/{bot_username}?start=quiz_{quiz_id}</code>\n\n"
+        f"<b>Group Start:</b> Use the <b>Start quiz in group</b> button below."
     )
 
     keyboard = [
@@ -570,7 +595,7 @@ async def process_shuffle(
         [
             InlineKeyboardButton(
                 "👥 Start quiz in group",
-                url=f"https://t.me/{bot_username}?startgroup=true",
+                url=f"https://t.me/{bot_username}?startgroup=quiz_{quiz_id}",
             )
         ],
         [
@@ -597,18 +622,39 @@ async def send_quiz_ready_message(
     quiz,
     quiz_id,
 ):
-    ready_msg = (
-        f"🎲 <b>Get ready for '{quiz['title']}'</b>\n\n"
-        f"📌 Questions: {len(quiz['questions'])}\n"
-        f"⏱ Timer: {quiz['timer']}s per question\n"
-        f"🔀 {quiz.get('shuffle', 'No Shuffle')}\n\n"
-        "Press <b>I'm ready</b> when prepared."
-    )
+    chat_type = message.chat.type
+
+    description = (quiz.get("description") or "No description provided.").strip()
+
+    if chat_type in ("group", "supergroup"):
+        ready_msg = (
+            "🎯 <b>QUIZ TIME — ARE YOU READY?</b>\n\n"
+            f"📚 <b>{quiz['title']}</b>\n\n"
+            f"📝 <b>Description:</b>\n{description}\n\n"
+            f"❓ <b>Total Questions:</b> {len(quiz['questions'])}\n"
+            f"⏱ <b>Time Per Question:</b> {quiz['timer']} seconds\n"
+            f"🔀 <b>Mode:</b> {quiz.get('shuffle', 'No Shuffle')}\n\n"
+            "🔥 <b>Get ready!</b>\n"
+            "Questions will appear <b>one by one</b> after you press "
+            "<b>YES, I AM READY FOR QUIZ</b>.\n\n"
+            "🏆 Answer each question before the timer ends."
+        )
+        button_text = "✅ YES, I AM READY FOR QUIZ"
+    else:
+        ready_msg = (
+            f"🎲 <b>Get ready for '{quiz['title']}'</b>\n\n"
+            f"📚 <b>Description:</b> {description}\n"
+            f"📌 Questions: {len(quiz['questions'])}\n"
+            f"⏱ Timer: {quiz['timer']}s per question\n"
+            f"🔀 {quiz.get('shuffle', 'No Shuffle')}\n\n"
+            "Press <b>I'm ready</b> when prepared."
+        )
+        button_text = "✅ I'm ready"
 
     keyboard = [
         [
             InlineKeyboardButton(
-                "✅ I'm ready",
+                button_text,
                 callback_data=f"runquiz_{quiz_id}_0",
             )
         ]
@@ -652,29 +698,30 @@ async def run_next_question(
     context: ContextTypes.DEFAULT_TYPE,
 ):
     query = update.callback_query
-    await query.answer()
 
     try:
         _, quiz_id, q_idx_text = query.data.split("_", 2)
         q_idx = int(q_idx_text)
     except (ValueError, IndexError):
-        await query.message.reply_text("❌ Invalid quiz session.")
+        await query.answer("Invalid quiz session.", show_alert=True)
         return
 
     quiz = database.get_quiz_by_id(quiz_id)
 
     if not quiz:
-        await query.message.reply_text("❌ Quiz not found!")
+        await query.answer("Quiz not found!", show_alert=True)
         return
 
     user_id = update.effective_user.id
 
     if user_id in active_sessions:
         await query.answer(
-            "A quiz is already running.",
+            "A quiz is already running for you.",
             show_alert=True,
         )
         return
+
+    await query.answer()
 
     active_sessions[user_id] = {
         "start_time": time.time(),
@@ -702,10 +749,7 @@ async def send_question(
     quiz_id,
     q_idx: int,
 ):
-    """
-    Send one quiz poll and automatically move to the next question
-    after the selected timer expires.
-    """
+    """Send one quiz question and automatically continue after its timer."""
     quiz = database.get_quiz_by_id(quiz_id)
 
     if not quiz:
@@ -716,12 +760,18 @@ async def send_question(
         )
         return
 
-    questions = quiz.get("questions", [])
-
     session = active_sessions.get(user_id)
-
     if not session:
         return
+
+    # Prepare a per-session question order once.
+    if "questions" not in session:
+        session["questions"] = list(quiz.get("questions", []))
+
+        if quiz.get("shuffle") == "Shuffle All":
+            random.shuffle(session["questions"])
+
+    questions = session["questions"]
 
     if q_idx >= len(questions):
         await finish_quiz_results(
@@ -734,8 +784,6 @@ async def send_question(
 
     q = questions[q_idx]
 
-    # Keep the original question order unless the database/application
-    # explicitly changes it.
     poll_msg = await context.bot.send_poll(
         chat_id=chat_id,
         question=f"[{q_idx + 1}/{len(questions)}] {q['question']}",
@@ -761,7 +809,6 @@ async def send_question(
     session["current_q"] = q_idx
     session["current_poll_id"] = poll_id
 
-    # Telegram closes the poll after open_period. Then advance automatically.
     asyncio.create_task(
         auto_advance_question(
             context,
@@ -925,7 +972,9 @@ async def stop_command(
     if user_id in active_sessions:
         active_sessions.pop(user_id, None)
         await update.message.reply_text(
-            "🛑 Active quiz session stopped."
+            "🛑 <b>Active quiz session stopped.</b>\n"
+            "No further questions will be sent.",
+            parse_mode="HTML",
         )
     else:
         await update.message.reply_text(
